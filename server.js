@@ -111,17 +111,17 @@ const MIN_NEWS_COUNT = 5;
 const xmlParser = new XMLParser({ ignoreAttributes: false });
 // CJK 한자(漢字) 유니코드 범위 — 이 범위에 해당하는 문자가 하나라도 있으면 해당 뉴스는 사용하지 않음
 const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
-// 1순위: 연합뉴스 분야별 피드에서 골고루 가져와서 "오늘의 주요 이슈"가 특정 분야로 쏠리지 않게 함.
-// (전체기사 피드 하나만 쓰면 그냥 "방금 올라온 기사" 순서라 잡다한 단신이 섞이기 쉬움)
+// 1순위: JTBC 분야별 RSS에서 골고루 가져와서 "오늘의 주요 이슈"가 특정 분야로 쏠리지 않게 함.
 const CATEGORY_FEEDS = [
-  { tag: '정치', url: 'https://www.yna.co.kr/rss/politics.xml' },
-  { tag: '경제', url: 'https://www.yna.co.kr/rss/economy.xml' },
-  { tag: '사회', url: 'https://www.yna.co.kr/rss/society.xml' },
-  { tag: '국제', url: 'https://www.yna.co.kr/rss/international.xml' },
-  { tag: '문화', url: 'https://www.yna.co.kr/rss/culture.xml' },
-  { tag: '스포츠', url: 'https://www.yna.co.kr/rss/sports.xml' },
+  { tag: '정치', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/politics' },
+  { tag: '경제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/economy' },
+  { tag: '사회', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/society' },
+  { tag: '국제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/international' },
+  { tag: '문화', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/culture' },
+  { tag: '연예', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/entertainment' },
+  { tag: '스포츠', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/sports' },
 ];
-// 2순위: 분야별 피드가 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드 (기존 방식)
+// 2순위: JTBC 분야별 피드가 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드
 const ALL_NEWS_FEED = { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true };
 // 3순위: 그마저도 실패하면 구글뉴스 (description이 지저분해서 요약 추출은 포기하고 헤드라인만 사용)
 const GOOGLE_NEWS_FEED = { url: 'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko', useSummary: false };
@@ -152,8 +152,10 @@ function extractSummarySentence(rawDescription) {
   let desc = stripHtml(rawDescription);
   if (!desc) return null;
 
-  // "(서울=연합뉴스) 홍길동 기자 = " 같은 바이라인 접두부 제거
-  desc = desc.replace(/^\([^)]{0,25}\)\s*[가-힣]{2,6}\s*(기자|특파원|통신원)\s*=\s*/, '');
+  // 맨 앞에 붙는 [앵커], [기자], [단독], [속보] 같은 대괄호 태그 제거 (방송사 스크립트 형식 대응)
+  desc = desc.replace(/^(\[[^\]]{1,6}\]\s*)+/, '');
+  // "(서울=연합뉴스) 홍길동 기자 = " 또는 "홍길동 기자 = " 같은 바이라인 접두부 제거 (지역=매체 표시는 있어도 없어도 됨)
+  desc = desc.replace(/^(\([^)]{0,25}\)\s*)?[가-힣]{2,6}\s*(기자|앵커|특파원|통신원)\s*=\s*/, '');
   // 꼬리에 붙는 저작권/재배포 금지 문구는 그 지점부터 잘라냄
   desc = desc.split(/저작권자|무단\s*전재|재배포\s*금지/)[0].trim();
   if (!desc) return null;
