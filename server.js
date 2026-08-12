@@ -103,15 +103,18 @@ const FALLBACK_NEWS = [
   { tag: '건강', text: '고혈압과 당뇨를 앓고 담배를 피우는 중년층은 치매 발병 시점이 평균 12.6년 더 빠른 것으로 나타났다.' },
   { tag: '사회', text: '청년 취업자 수가 45개월째 감소하는 가운데, 전체 취업자 수는 한 달 새 10만 명 늘었다.' },
   { tag: '정치', text: '정부는 광복 100주년을 향한 2045 국가전략 수립에 속도를 내고 있다.' },
-];
+].map((it) => ({ ...it, title: it.text, link: null })); // 실시간 기사가 아니므로 원문 링크는 없음
 
-const MAX_NEWS_COUNT = 20;
+const MAX_NEWS_COUNT = 10;
 const MIN_NEWS_COUNT = 5;
 
 const xmlParser = new XMLParser({ ignoreAttributes: false });
 // CJK 한자(漢字) 유니코드 범위 — 이 범위에 해당하는 문자가 하나라도 있으면 해당 뉴스는 사용하지 않음
 const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
-// 1순위: JTBC 분야별 RSS에서 골고루 가져와서 "오늘의 주요 이슈"가 특정 분야로 쏠리지 않게 함.
+// 1순위: JTBC의 "오늘의 주요 이슈" 피드. 이미 중요도순으로 큐레이션된 피드라
+// 분야별로 나눠 인터리빙할 필요 없이 순서 그대로 사용한다.
+const ISSUE_FEED = { url: 'https://news-ex.jtbc.co.kr/v1/get/rss/issue', useSummary: true, tag: '오늘의 이슈' };
+// 2순위: 이슈 피드가 실패했을 때 쓰는 JTBC 분야별 RSS (정치/경제/사회/국제/문화/연예/스포츠에서 골고루)
 const CATEGORY_FEEDS = [
   { tag: '정치', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/politics' },
   { tag: '경제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/economy' },
@@ -121,9 +124,9 @@ const CATEGORY_FEEDS = [
   { tag: '연예', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/entertainment' },
   { tag: '스포츠', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/sports' },
 ];
-// 2순위: JTBC 분야별 피드가 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드
+// 3순위: 그마저도 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드
 const ALL_NEWS_FEED = { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true };
-// 3순위: 그마저도 실패하면 구글뉴스 (description이 지저분해서 요약 추출은 포기하고 헤드라인만 사용)
+// 4순위: 그마저도 실패하면 구글뉴스 (description이 지저분해서 요약 추출은 포기하고 헤드라인만 사용)
 const GOOGLE_NEWS_FEED = { url: 'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko', useSummary: false };
 
 function decodeEntities(s) {
@@ -193,11 +196,13 @@ async function fetchFeed(feedUrl, useSummary, limit) {
       }
       if (!text) text = title; // 요약을 못 뽑으면 헤드라인으로 대체
 
-      if (HANJA_REGEX.test(text)) continue; // 한자 포함된 뉴스는 제외
+      if (HANJA_REGEX.test(text) || HANJA_REGEX.test(title)) continue; // 한자 포함된 뉴스는 제외
       if (text.length > 120) text = text.slice(0, 120).trim() + '…';
       if (text.length < 8) continue;
+
+      const link = stripHtml(it?.link);
       const tag = (it?.category && typeof it.category === 'string' ? it.category : '오늘의뉴스').toString().slice(0, 10);
-      cleaned.push({ tag, text });
+      cleaned.push({ tag, text, title, link: link || null });
       if (cleaned.length >= limit) break;
     }
     if (cleaned.length < Math.min(6, limit)) throw new Error('too few valid items');
@@ -275,6 +280,13 @@ app.get('/api/news', async (req, res) => {
     return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
   }
   const attempts = [
+    {
+      name: 'issue-feed',
+      run: () =>
+        fetchFeed(ISSUE_FEED.url, ISSUE_FEED.useSummary, MAX_NEWS_COUNT).then((items) =>
+          items.map((it) => ({ ...it, tag: ISSUE_FEED.tag }))
+        ),
+    },
     { name: 'category-pool', run: () => fetchCategoryPool(MAX_NEWS_COUNT) },
     { name: 'all-news', run: () => fetchFeed(ALL_NEWS_FEED.url, ALL_NEWS_FEED.useSummary, MAX_NEWS_COUNT) },
     { name: 'google-news', run: () => fetchFeed(GOOGLE_NEWS_FEED.url, GOOGLE_NEWS_FEED.useSummary, MAX_NEWS_COUNT) },
