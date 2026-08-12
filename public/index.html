@@ -492,8 +492,10 @@ function finalizeSentence(typedArr, target){
 function skipCurrent(){
   if(locked) return;
   locked = true;
+  const target = [...NEWS[idx].text];
   const elapsed = (performance.now() - sentenceStart) / 1000;
-  perSentence.push({ text: NEWS[idx].text, elapsed, acc: null, skipped:true });
+  totalTargetChars += target.length; // 건너뛴 뉴스는 0타로 점수에 반영 (정확도 계산에 포함)
+  perSentence.push({ text: NEWS[idx].text, elapsed, acc: 0, skipped:true });
   elTyper.disabled = true;
   advanceAfterDelay(150);
 }
@@ -552,7 +554,7 @@ async function finishGame(){
     <tr>
       <td>${i+1}. ${s.text.length > 22 ? s.text.slice(0,22) + '…' : s.text}</td>
       <td>${s.elapsed.toFixed(1)}초</td>
-      <td class="${s.skipped ? 'skip' : ''}">${s.skipped ? '건너뜀' : s.acc + '%'}</td>
+      <td class="${s.skipped ? 'skip' : ''}">${s.skipped ? '건너뜀 (0%)' : s.acc + '%'}</td>
     </tr>
   `).join('');
 
