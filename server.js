@@ -109,6 +109,8 @@ const MAX_NEWS_COUNT = 20;
 const MIN_NEWS_COUNT = 5;
 
 const xmlParser = new XMLParser({ ignoreAttributes: false });
+// CJK 한자(漢字) 유니코드 범위 — 이 범위에 해당하는 문자가 하나라도 있으면 해당 뉴스는 사용하지 않음
+const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
 const RSS_FEEDS = [
   'https://www.yna.co.kr/rss/news.xml',
   'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko',
@@ -142,6 +144,7 @@ async function fetchFeed(url, limit) {
       let desc = stripHtml(it?.description);
       if (!title) continue;
       let text = desc && desc !== title && desc.length > 8 ? `${title}. ${desc}` : title;
+      if (HANJA_REGEX.test(text)) continue; // 한자 포함된 뉴스는 제외
       if (text.length > 120) text = text.slice(0, 120).trim() + '…';
       if (text.length < 12) continue;
       const tag = (it?.category && typeof it.category === 'string' ? it.category : '오늘의뉴스').toString().slice(0, 10);

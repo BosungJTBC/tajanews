@@ -86,8 +86,9 @@
   }
   .count-btn{
     background: var(--bg); border: 1px solid var(--border); color: var(--muted);
-    border-radius: 10px; padding: 11px 6px; font-size: 14px; font-weight:700;
+    border-radius: 10px; padding: 10px 4px; font-size: 12.5px; font-weight:700;
     cursor:pointer; font-family: var(--font); transition: all .12s ease;
+    white-space: nowrap;
   }
   .count-btn:hover{ color: var(--text); border-color: #3a4152; }
   .count-btn.active{
@@ -235,12 +236,12 @@
     <input id="playerName" type="text" maxlength="12" placeholder="이름을 입력하세요">
     <div class="name-err" id="name-err"></div>
 
-    <div class="field-label">문장 개수</div>
+    <div class="field-label">뉴스 개수</div>
     <div class="count-select" id="count-select">
-      <button type="button" class="count-btn" data-count="5">5개</button>
-      <button type="button" class="count-btn active" data-count="10">10개</button>
-      <button type="button" class="count-btn" data-count="15">15개</button>
-      <button type="button" class="count-btn" data-count="20">20개</button>
+      <button type="button" class="count-btn" data-count="5">5개 뉴스</button>
+      <button type="button" class="count-btn active" data-count="10">10개 뉴스</button>
+      <button type="button" class="count-btn" data-count="15">15개 뉴스</button>
+      <button type="button" class="count-btn" data-count="20">20개 뉴스</button>
     </div>
 
     <button class="primary" id="btn-start" disabled>뉴스 불러오는 중...</button>
@@ -259,8 +260,8 @@
 
     <div class="headline-tag" id="tag">사회</div>
     <div class="target" id="target"></div>
-    <input id="typer" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="여기에 위 문장을 그대로 입력하세요">
-    <div class="hint">문장을 끝까지 입력하면 자동으로 다음 문장으로 넘어갑니다</div>
+    <input id="typer" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="여기에 위 뉴스를 그대로 입력하세요">
+    <div class="hint">뉴스를 끝까지 입력하면 자동으로 다음 뉴스로 넘어갑니다</div>
 
     <div class="btn-row">
       <button class="ghost" id="btn-skip">이 뉴스 건너뛰기</button>
@@ -281,9 +282,9 @@
       <div class="box"><div class="v" id="res-time">0초</div><div class="k">총 소요시간</div></div>
     </div>
 
-    <div class="section-title">문장별 기록</div>
+    <div class="section-title">뉴스별 기록</div>
     <table class="data">
-      <thead><tr><th>문장</th><th>소요시간</th><th>정확도</th></tr></thead>
+      <thead><tr><th>뉴스</th><th>소요시간</th><th>정확도</th></tr></thead>
       <tbody id="res-table"></tbody>
     </table>
 
@@ -303,7 +304,7 @@
   </div>
 
   <div class="footer-note">
-    실제 보도 내용을 바탕으로 재구성한 연습용 문장이며, 원문 기사와 문구가 다를 수 있습니다.<br>
+    실제 보도 내용을 바탕으로 재구성한 연습용 뉴스이며, 원문 기사와 문구가 다를 수 있습니다.<br>
     랭킹은 서버에 저장되어 접속하는 모든 사람에게 공유됩니다.
   </div>
 </div>
@@ -317,7 +318,7 @@ let NEWS = [];
 let playedAtMe = null;
 let selectedCount = 10;
 
-/* ---------------- 문장 개수 선택 ---------------- */
+/* ---------------- 뉴스 개수 선택 ---------------- */
 const countButtons = Array.from(document.querySelectorAll('.count-btn'));
 countButtons.forEach(btn => {
   btn.addEventListener('click', () => {
