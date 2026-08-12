@@ -140,13 +140,11 @@ async function fetchFeed(url, limit) {
 
     const cleaned = [];
     for (const it of items) {
-      const title = stripHtml(it?.title);
-      let desc = stripHtml(it?.description);
-      if (!title) continue;
-      let text = desc && desc !== title && desc.length > 8 ? `${title}. ${desc}` : title;
+      let text = stripHtml(it?.title); // 본문·기자이름 없이 헤드라인 한 줄만 사용
+      if (!text) continue;
       if (HANJA_REGEX.test(text)) continue; // 한자 포함된 뉴스는 제외
       if (text.length > 120) text = text.slice(0, 120).trim() + '…';
-      if (text.length < 12) continue;
+      if (text.length < 8) continue;
       const tag = (it?.category && typeof it.category === 'string' ? it.category : '오늘의뉴스').toString().slice(0, 10);
       cleaned.push({ tag, text });
       if (cleaned.length >= limit) break;
