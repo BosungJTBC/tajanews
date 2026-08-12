@@ -158,28 +158,47 @@ async function fetchFeed(url, limit) {
   }
 }
 
-let newsCache = { items: null, source: null, fetchedAt: 0 };
-const NEWS_CACHE_MS = 30 * 60 * 1000; // 30분 캐시
+let newsCache = { items: null, source: null, dayKey: null, fetchedAt: 0 };
+
+// 한국시간(KST) 기준 "오늘의 뉴스" 갱신 주기: 매일 오전 9시.
+// 오전 9시 이전 접속은 전날 9시에 받아온 뉴스를 그대로 재사용하고,
+// 오전 9시가 지난 뒤 첫 요청이 들어오면 그때 새로 한 번만 가져온다.
+function getKstParts(date) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hour12: false,
+  });
+  const parts = fmt.formatToParts(date).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  return { dateKey: `${parts.year}-${parts.month}-${parts.day}`, hour: parseInt(parts.hour, 10) };
+}
+
+function currentNewsDayKey(date = new Date()) {
+  const { dateKey, hour } = getKstParts(date);
+  if (hour >= 9) return dateKey;
+  const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  return getKstParts(yesterday).dateKey;
+}
 
 app.get('/api/news', async (req, res) => {
   let count = parseInt(req.query.count, 10);
   if (!Number.isFinite(count)) count = MAX_NEWS_COUNT;
   count = Math.max(MIN_NEWS_COUNT, Math.min(MAX_NEWS_COUNT, count));
 
-  const now = Date.now();
-  if (newsCache.items && now - newsCache.fetchedAt < NEWS_CACHE_MS) {
+  const todayKey = currentNewsDayKey();
+  if (newsCache.items && newsCache.dayKey === todayKey) {
     return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
   }
   for (const feedUrl of RSS_FEEDS) {
     try {
       const items = await fetchFeed(feedUrl, MAX_NEWS_COUNT);
-      newsCache = { items, source: 'live', fetchedAt: now };
+      newsCache = { items, source: 'live', dayKey: todayKey, fetchedAt: Date.now() };
       return res.json({ source: 'live', items: items.slice(0, count) });
     } catch (e) {
       console.warn('feed failed:', feedUrl, e.message);
     }
   }
-  newsCache = { items: FALLBACK_NEWS, source: 'fallback', fetchedAt: now };
+  newsCache = { items: FALLBACK_NEWS, source: 'fallback', dayKey: todayKey, fetchedAt: Date.now() };
   res.json({ source: 'fallback', items: FALLBACK_NEWS.slice(0, count) });
 });
 
