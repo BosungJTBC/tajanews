@@ -93,7 +93,20 @@ const FALLBACK_NEWS = [
   { tag: '정치', text: '서울시장 선거에 대한 선거소청이 기각됐다. 선관위는 이번 판단이 선거 결과에 영향을 주지 않는다고 밝혔다.' },
   { tag: '정치', text: '김윤덕 국토교통부 장관은 그린벨트를 해제해 주택 공급을 확대하겠다는 의지를 밝혔다.' },
   { tag: '화제', text: '경기 광교에서 한 달 전 잃어버렸던 1미터 크기의 나일왕도마뱀 주인이 마침내 나타났다.' },
+  { tag: '정치', text: '이재명 대통령은 경찰의 수사 전권에 대한 우려를 언급하며 범죄 피해자 대책을 다시 검토하라고 지시했다.' },
+  { tag: '사회', text: '서울 가양동의 한 아파트에서 화재가 발생해 뇌병변 장애가 있는 어머니와 아들이 숨졌다.' },
+  { tag: '경제', text: '코스피가 삼성전자와 SK하이닉스의 동반 상승에 힘입어 매수 사이드카가 발동됐다.' },
+  { tag: '사회', text: '복날을 앞두고 개고기 판매 금지를 하루 앞둔 업주들 사이에서는 생계 걱정이 커지고 있다.' },
+  { tag: '국제', text: '미국에서는 전쟁 장기화 여파로 고용의 질적 저하가 나타나고 있으며, 이는 기준금리 결정에 영향을 줄 수 있다는 분석이 나온다.' },
+  { tag: '정치', text: '더불어민주당은 메가 프로젝트 뒷받침에 총력을 기울이고 있으며, 국민의힘은 재정 레버리지에 대한 우려를 제기했다.' },
+  { tag: '사회', text: '수면 마취 뒤 느닷없이 달아난 30대가 1년 동안 프로포폴 등을 140여 차례 처방받은 정황이 드러났다.' },
+  { tag: '건강', text: '고혈압과 당뇨를 앓고 담배를 피우는 중년층은 치매 발병 시점이 평균 12.6년 더 빠른 것으로 나타났다.' },
+  { tag: '사회', text: '청년 취업자 수가 45개월째 감소하는 가운데, 전체 취업자 수는 한 달 새 10만 명 늘었다.' },
+  { tag: '정치', text: '정부는 광복 100주년을 향한 2045 국가전략 수립에 속도를 내고 있다.' },
 ];
+
+const MAX_NEWS_COUNT = 20;
+const MIN_NEWS_COUNT = 5;
 
 const xmlParser = new XMLParser({ ignoreAttributes: false });
 const RSS_FEEDS = [
@@ -109,7 +122,7 @@ function stripHtml(s) {
     .trim();
 }
 
-async function fetchFeed(url) {
+async function fetchFeed(url, limit) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 7000);
   try {
@@ -133,9 +146,9 @@ async function fetchFeed(url) {
       if (text.length < 12) continue;
       const tag = (it?.category && typeof it.category === 'string' ? it.category : '오늘의뉴스').toString().slice(0, 10);
       cleaned.push({ tag, text });
-      if (cleaned.length >= 10) break;
+      if (cleaned.length >= limit) break;
     }
-    if (cleaned.length < 6) throw new Error('too few valid items');
+    if (cleaned.length < Math.min(6, limit)) throw new Error('too few valid items');
     return cleaned;
   } finally {
     clearTimeout(t);
@@ -146,21 +159,25 @@ let newsCache = { items: null, source: null, fetchedAt: 0 };
 const NEWS_CACHE_MS = 30 * 60 * 1000; // 30분 캐시
 
 app.get('/api/news', async (req, res) => {
+  let count = parseInt(req.query.count, 10);
+  if (!Number.isFinite(count)) count = MAX_NEWS_COUNT;
+  count = Math.max(MIN_NEWS_COUNT, Math.min(MAX_NEWS_COUNT, count));
+
   const now = Date.now();
   if (newsCache.items && now - newsCache.fetchedAt < NEWS_CACHE_MS) {
-    return res.json({ source: newsCache.source, items: newsCache.items });
+    return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
   }
   for (const feedUrl of RSS_FEEDS) {
     try {
-      const items = await fetchFeed(feedUrl);
+      const items = await fetchFeed(feedUrl, MAX_NEWS_COUNT);
       newsCache = { items, source: 'live', fetchedAt: now };
-      return res.json({ source: 'live', items });
+      return res.json({ source: 'live', items: items.slice(0, count) });
     } catch (e) {
       console.warn('feed failed:', feedUrl, e.message);
     }
   }
   newsCache = { items: FALLBACK_NEWS, source: 'fallback', fetchedAt: now };
-  res.json({ source: 'fallback', items: FALLBACK_NEWS });
+  res.json({ source: 'fallback', items: FALLBACK_NEWS.slice(0, count) });
 });
 
 app.listen(PORT, () => console.log(`news-typing-game server listening on ${PORT}`));
