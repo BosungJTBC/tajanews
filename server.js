@@ -111,12 +111,20 @@ const MIN_NEWS_COUNT = 5;
 const xmlParser = new XMLParser({ ignoreAttributes: false });
 // CJK 한자(漢字) 유니코드 범위 — 이 범위에 해당하는 문자가 하나라도 있으면 해당 뉴스는 사용하지 않음
 const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
-const RSS_FEEDS = [
-  // 연합뉴스는 description에 실제 기사 리드 문장이 들어있어서 요약 문장 추출이 가능함
-  { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true },
-  // 구글뉴스 description은 관련기사 여러 개가 뒤섞여있는 형태라 요약 추출이 어려움 → 헤드라인만 사용
-  { url: 'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko', useSummary: false },
+// 1순위: 연합뉴스 분야별 피드에서 골고루 가져와서 "오늘의 주요 이슈"가 특정 분야로 쏠리지 않게 함.
+// (전체기사 피드 하나만 쓰면 그냥 "방금 올라온 기사" 순서라 잡다한 단신이 섞이기 쉬움)
+const CATEGORY_FEEDS = [
+  { tag: '정치', url: 'https://www.yna.co.kr/rss/politics.xml' },
+  { tag: '경제', url: 'https://www.yna.co.kr/rss/economy.xml' },
+  { tag: '사회', url: 'https://www.yna.co.kr/rss/society.xml' },
+  { tag: '국제', url: 'https://www.yna.co.kr/rss/international.xml' },
+  { tag: '문화', url: 'https://www.yna.co.kr/rss/culture.xml' },
+  { tag: '스포츠', url: 'https://www.yna.co.kr/rss/sports.xml' },
 ];
+// 2순위: 분야별 피드가 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드 (기존 방식)
+const ALL_NEWS_FEED = { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true };
+// 3순위: 그마저도 실패하면 구글뉴스 (description이 지저분해서 요약 추출은 포기하고 헤드라인만 사용)
+const GOOGLE_NEWS_FEED = { url: 'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko', useSummary: false };
 
 function decodeEntities(s) {
   return s
@@ -197,6 +205,42 @@ async function fetchFeed(feedUrl, useSummary, limit) {
   }
 }
 
+// 여러 분야 리스트를 한 분야씩 번갈아 섞는다. 5개만 뽑아도 한 분야로 쏠리지 않게 하기 위함.
+function interleave(lists) {
+  const result = [];
+  const maxLen = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < maxLen; i++) {
+    for (const l of lists) {
+      if (l[i]) result.push(l[i]);
+    }
+  }
+  return result;
+}
+
+async function fetchCategoryPool(limitTotal) {
+  const perCategoryLimit = 6;
+  const settled = await Promise.allSettled(
+    CATEGORY_FEEDS.map((cat) =>
+      fetchFeed(cat.url, true, perCategoryLimit).then((items) =>
+        items.map((it) => ({ ...it, tag: cat.tag })) // RSS 자체 카테고리값 대신 우리가 정한 분야명으로 통일
+      )
+    )
+  );
+
+  const lists = [];
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value.length) {
+      lists.push(r.value);
+    } else if (r.status === 'rejected') {
+      console.warn('category feed failed:', CATEGORY_FEEDS[i].url, r.reason?.message);
+    }
+  });
+
+  const merged = interleave(lists);
+  if (merged.length < 6) throw new Error('category pool too small (' + merged.length + ' items from ' + lists.length + ' categories)');
+  return merged.slice(0, limitTotal);
+}
+
 let newsCache = { items: null, source: null, dayKey: null, fetchedAt: 0 };
 
 // 한국시간(KST) 기준 "오늘의 뉴스" 갱신 주기: 매일 오전 9시.
@@ -228,13 +272,18 @@ app.get('/api/news', async (req, res) => {
   if (newsCache.items && newsCache.dayKey === todayKey) {
     return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
   }
-  for (const feed of RSS_FEEDS) {
+  const attempts = [
+    { name: 'category-pool', run: () => fetchCategoryPool(MAX_NEWS_COUNT) },
+    { name: 'all-news', run: () => fetchFeed(ALL_NEWS_FEED.url, ALL_NEWS_FEED.useSummary, MAX_NEWS_COUNT) },
+    { name: 'google-news', run: () => fetchFeed(GOOGLE_NEWS_FEED.url, GOOGLE_NEWS_FEED.useSummary, MAX_NEWS_COUNT) },
+  ];
+  for (const attempt of attempts) {
     try {
-      const items = await fetchFeed(feed.url, feed.useSummary, MAX_NEWS_COUNT);
+      const items = await attempt.run();
       newsCache = { items, source: 'live', dayKey: todayKey, fetchedAt: Date.now() };
       return res.json({ source: 'live', items: items.slice(0, count) });
     } catch (e) {
-      console.warn('feed failed:', feed.url, e.message);
+      console.warn(`news source failed (${attempt.name}):`, e.message);
     }
   }
   newsCache = { items: FALLBACK_NEWS, source: 'fallback', dayKey: todayKey, fetchedAt: Date.now() };
