@@ -81,6 +81,24 @@ app.post('/api/leaderboard', async (req, res) => {
   }
 });
 
+// 전체 랭킹 초기화. RESET_KEY 환경변수와 일치하는 key 쿼리파라미터로만 접근 가능.
+// 브라우저 주소창에 바로 붙여넣어 쓸 수 있도록 GET으로 만들었고, 결과도 HTML로 보여줌.
+app.get('/api/leaderboard/reset', async (req, res) => {
+  const provided = req.query.key;
+  if (!process.env.RESET_KEY || provided !== process.env.RESET_KEY) {
+    return res.status(403).send('<p style="font-family:sans-serif">접근 권한이 없어요.</p>');
+  }
+  try {
+    const client = await getRedis();
+    if (client) await client.del(LEADERBOARD_KEY);
+    memoryFallback = [];
+    res.send('<p style="font-family:sans-serif">랭킹이 초기화됐어요. <a href="/">메인으로 돌아가기</a></p>');
+  } catch (e) {
+    console.error(e);
+    res.status(500).send('<p style="font-family:sans-serif">초기화 중 오류가 발생했어요.</p>');
+  }
+});
+
 /* ---------------- Daily news (server-side fetch, no CORS issues) ---------------- */
 const FALLBACK_NEWS = [
   { tag: '사회', text: '경남 가뭄에 국가소방동원령이 발령됐다. 저수율이 33%까지 떨어져 전국에서 물탱크차 200대가 투입됐다.' },
