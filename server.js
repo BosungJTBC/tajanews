@@ -112,23 +112,57 @@ const xmlParser = new XMLParser({ ignoreAttributes: false });
 // CJK 한자(漢字) 유니코드 범위 — 이 범위에 해당하는 문자가 하나라도 있으면 해당 뉴스는 사용하지 않음
 const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
 const RSS_FEEDS = [
-  'https://www.yna.co.kr/rss/news.xml',
-  'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko',
+  // 연합뉴스는 description에 실제 기사 리드 문장이 들어있어서 요약 문장 추출이 가능함
+  { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true },
+  // 구글뉴스 description은 관련기사 여러 개가 뒤섞여있는 형태라 요약 추출이 어려움 → 헤드라인만 사용
+  { url: 'https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko', useSummary: false },
 ];
 
+function decodeEntities(s) {
+  return s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'");
+}
+
 function stripHtml(s) {
-  return String(s || '')
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/<[^>]*>/g, ' ')
+  return decodeEntities(
+    String(s || '')
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+      .replace(/<[^>]*>/g, ' ')
+  )
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-async function fetchFeed(url, limit) {
+// description에서 기자 바이라인·저작권 문구를 걷어내고 첫 문장 하나만 뽑아낸다.
+// 실패하거나 결과가 너무 짧으면 null을 반환해서 호출부가 헤드라인으로 대체하게 한다.
+function extractSummarySentence(rawDescription) {
+  let desc = stripHtml(rawDescription);
+  if (!desc) return null;
+
+  // "(서울=연합뉴스) 홍길동 기자 = " 같은 바이라인 접두부 제거
+  desc = desc.replace(/^\([^)]{0,25}\)\s*[가-힣]{2,6}\s*(기자|특파원|통신원)\s*=\s*/, '');
+  // 꼬리에 붙는 저작권/재배포 금지 문구는 그 지점부터 잘라냄
+  desc = desc.split(/저작권자|무단\s*전재|재배포\s*금지/)[0].trim();
+  if (!desc) return null;
+
+  const match = desc.match(/^(.{10,140}?[.!?」』])(\s|$)/);
+  let sentence = match ? match[1] : desc.slice(0, 120).trim();
+  sentence = sentence.trim();
+  if (sentence.length < 10) return null;
+  if (!/[.!?」』]$/.test(sentence)) sentence += '.';
+  return sentence;
+}
+
+async function fetchFeed(feedUrl, useSummary, limit) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 7000);
   try {
-    const r = await fetch(url, {
+    const r = await fetch(feedUrl, {
       signal: controller.signal,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsTypingGame/1.0)' },
     });
@@ -140,8 +174,15 @@ async function fetchFeed(url, limit) {
 
     const cleaned = [];
     for (const it of items) {
-      let text = stripHtml(it?.title); // 본문·기자이름 없이 헤드라인 한 줄만 사용
-      if (!text) continue;
+      const title = stripHtml(it?.title);
+      if (!title) continue;
+
+      let text = null;
+      if (useSummary) {
+        text = extractSummarySentence(it?.description);
+      }
+      if (!text) text = title; // 요약을 못 뽑으면 헤드라인으로 대체
+
       if (HANJA_REGEX.test(text)) continue; // 한자 포함된 뉴스는 제외
       if (text.length > 120) text = text.slice(0, 120).trim() + '…';
       if (text.length < 8) continue;
@@ -187,13 +228,13 @@ app.get('/api/news', async (req, res) => {
   if (newsCache.items && newsCache.dayKey === todayKey) {
     return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
   }
-  for (const feedUrl of RSS_FEEDS) {
+  for (const feed of RSS_FEEDS) {
     try {
-      const items = await fetchFeed(feedUrl, MAX_NEWS_COUNT);
+      const items = await fetchFeed(feed.url, feed.useSummary, MAX_NEWS_COUNT);
       newsCache = { items, source: 'live', dayKey: todayKey, fetchedAt: Date.now() };
       return res.json({ source: 'live', items: items.slice(0, count) });
     } catch (e) {
-      console.warn('feed failed:', feedUrl, e.message);
+      console.warn('feed failed:', feed.url, e.message);
     }
   }
   newsCache = { items: FALLBACK_NEWS, source: 'fallback', dayKey: todayKey, fetchedAt: Date.now() };
