@@ -255,7 +255,19 @@
     </div>
 
     <button class="primary" id="btn-start" disabled>뉴스 불러오는 중...</button>
+    <button class="ghost" id="btn-skip-articles" type="button" disabled style="margin-top:8px;">타자연습 패스, 기사 바로 보러가기</button>
     <div class="status-line" id="status-line"></div>
+
+    <div class="hidden" id="intro-article-panel">
+      <div class="section-title">📎 오늘의 주요 뉴스</div>
+      <div id="intro-article-links"></div>
+    </div>
+
+    <div class="section-title">🏆 전체 랭킹 (상위 10명, 모두에게 공유됨)</div>
+    <table class="data">
+      <thead><tr><th>순위</th><th>이름</th><th>타수</th><th>정확도</th></tr></thead>
+      <tbody id="intro-rank-table"><tr><td colspan="4">불러오는 중...</td></tr></tbody>
+    </table>
   </div>
 
   <!-- PLAY -->
@@ -363,8 +375,10 @@ async function initNews(){
   }
   startBtn.disabled = FULL_NEWS.length === 0;
   startBtn.textContent = FULL_NEWS.length ? '타자 시작하기' : '뉴스를 불러올 수 없음';
+  document.getElementById('btn-skip-articles').disabled = FULL_NEWS.length === 0;
 }
 initNews();
+loadIntroRanking();
 
 /* ---------------- 화면 요소 ---------------- */
 const screenIntro = document.getElementById('screen-intro');
@@ -401,9 +415,35 @@ document.getElementById('btn-copy').addEventListener('click', copyResult);
 document.getElementById('btn-skip').addEventListener('click', skipCurrent);
 document.getElementById('btn-end').addEventListener('click', endNow);
 document.getElementById('btn-refresh-rank').addEventListener('click', () => renderRanking(playedAtMe));
+document.getElementById('btn-skip-articles').addEventListener('click', toggleIntroArticles);
 elTyper.addEventListener('input', onInput);
 elPlayerName.addEventListener('input', () => { elNameErr.textContent = ''; });
 elPlayerName.addEventListener('keydown', (e) => { if(e.key === 'Enter') tryStartGame(); });
+
+function toggleIntroArticles(){
+  const panel = document.getElementById('intro-article-panel');
+  const btn = document.getElementById('btn-skip-articles');
+  const willShow = panel.classList.contains('hidden');
+  if(willShow){
+    renderArticleLinksInto(document.getElementById('intro-article-links'), FULL_NEWS);
+    panel.classList.remove('hidden');
+    btn.textContent = '기사 목록 닫기';
+  } else {
+    panel.classList.add('hidden');
+    btn.textContent = '타자연습 패스, 기사 바로 보러가기';
+  }
+}
+
+async function loadIntroRanking(){
+  const tbody = document.getElementById('intro-rank-table');
+  try{
+    const res = await fetch('/api/leaderboard');
+    const list = await res.json();
+    renderRankingList(tbody, list.slice(0,10));
+  } catch(e){
+    tbody.innerHTML = '<tr><td colspan="4">랭킹을 불러오지 못했어요</td></tr>';
+  }
+}
 
 function tryStartGame(){
   const name = elPlayerName.value.trim();
@@ -574,9 +614,10 @@ async function finishGame(){
   screenPlay.classList.add('hidden');
   screenResult.classList.remove('hidden');
 
-  renderArticleLinks();
+  renderArticleLinksInto(document.getElementById('article-links'), NEWS);
 
-  document.getElementById('rank-table').innerHTML = '<tr><td colspan="4">불러오는 중...</td></tr>';
+  const rankTbody = document.getElementById('rank-table');
+  rankTbody.innerHTML = '<tr><td colspan="4">불러오는 중...</td></tr>';
   try{
     const res = await fetch('/api/leaderboard', {
       method: 'POST',
@@ -585,9 +626,10 @@ async function finishGame(){
     });
     const data = await res.json();
     playedAtMe = data.entry ? data.entry.playedAt : null;
-    renderRankingList(data.leaderboard || []);
+    renderRankingList(rankTbody, data.leaderboard || []);
+    loadIntroRanking();
   } catch(e){
-    document.getElementById('rank-table').innerHTML = '<tr><td colspan="4">랭킹을 불러오지 못했어요</td></tr>';
+    rankTbody.innerHTML = '<tr><td colspan="4">랭킹을 불러오지 못했어요</td></tr>';
   }
 }
 
@@ -597,15 +639,14 @@ async function renderRanking(highlightPlayedAt){
   try{
     const res = await fetch('/api/leaderboard');
     const list = await res.json();
-    renderRankingList(list.slice(0,10), highlightPlayedAt);
+    renderRankingList(tbody, list.slice(0,10), highlightPlayedAt);
   } catch(e){
     tbody.innerHTML = '<tr><td colspan="4">랭킹을 불러오지 못했어요</td></tr>';
   }
 }
 
-function renderRankingList(top10, highlightPlayedAt){
+function renderRankingList(tbody, top10, highlightPlayedAt){
   const highlight = highlightPlayedAt !== undefined ? highlightPlayedAt : playedAtMe;
-  const tbody = document.getElementById('rank-table');
   tbody.innerHTML = top10.map((r, i) => `
     <tr class="${r.playedAt === highlight ? 'me' : ''}">
       <td><span class="rank-num">${i+1}</span></td>
@@ -616,9 +657,8 @@ function renderRankingList(top10, highlightPlayedAt){
   `).join('') || '<tr><td colspan="4">아직 기록이 없어요</td></tr>';
 }
 
-function renderArticleLinks(){
-  const container = document.getElementById('article-links');
-  container.innerHTML = NEWS.map((item, i) => {
+function renderArticleLinksInto(container, list){
+  container.innerHTML = list.map((item, i) => {
     const headline = escapeHtml(item.title || item.text);
     if (item.link) {
       return `<a class="article-link" href="${escapeHtml(item.link)}" target="_blank" rel="noopener noreferrer">
