@@ -131,17 +131,22 @@ const xmlParser = new XMLParser({ ignoreAttributes: false });
 const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
 // 1순위: JTBC의 "오늘의 주요 이슈" 피드. 이미 중요도순으로 큐레이션된 피드라
 // 분야별로 나눠 인터리빙할 필요 없이 순서 그대로 사용한다.
-const ISSUE_FEED = { url: 'https://news-ex.jtbc.co.kr/v1/get/rss/issue', useSummary: true, tag: '오늘의 이슈' };
+const ISSUE_FEED = { key: 'issue', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/issue', useSummary: true, tag: '오늘의 이슈' };
 // 2순위: 이슈 피드가 실패했을 때 쓰는 JTBC 분야별 RSS (정치/경제/사회/국제/문화/연예/스포츠에서 골고루)
+// key는 프런트엔드의 뉴스 분야 선택 버튼(data-category)과 그대로 매칭된다.
 const CATEGORY_FEEDS = [
-  { tag: '정치', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/politics' },
-  { tag: '경제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/economy' },
-  { tag: '사회', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/society' },
-  { tag: '국제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/international' },
-  { tag: '문화', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/culture' },
-  { tag: '연예', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/entertainment' },
-  { tag: '스포츠', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/sports' },
+  { key: 'politics', tag: '정치', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/politics' },
+  { key: 'economy', tag: '경제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/economy' },
+  { key: 'society', tag: '사회', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/society' },
+  { key: 'international', tag: '국제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/international' },
+  { key: 'culture', tag: '문화', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/culture' },
+  { key: 'entertainment', tag: '연예', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/entertainment' },
+  { key: 'sports', tag: '스포츠', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/sports' },
 ];
+const CATEGORY_LOOKUP = CATEGORY_FEEDS.reduce((acc, f) => { acc[f.key] = f; return acc; }, {});
+// 사용자가 뉴스 분야를 직접 고를 수 있는 선택지. 'issue'는 기존의 다단계 폴백 체인을 그대로 쓰고,
+// 나머지는 해당 분야 RSS 하나만 사용한다.
+const CATEGORY_KEYS = ['issue', ...CATEGORY_FEEDS.map((f) => f.key)];
 // 3순위: 그마저도 대부분 실패했을 때 쓰는 연합뉴스 전체기사 피드
 const ALL_NEWS_FEED = { url: 'https://www.yna.co.kr/rss/news.xml', useSummary: true };
 // 4순위: 그마저도 실패하면 구글뉴스 (description이 지저분해서 요약 추출은 포기하고 헤드라인만 사용)
@@ -266,7 +271,8 @@ async function fetchCategoryPool(limitTotal) {
   return merged.slice(0, limitTotal);
 }
 
-let newsCache = { items: null, source: null, dayKey: null, fetchedAt: 0 };
+// 분야(category)별로 따로 캐시한다. 키는 CATEGORY_KEYS 중 하나.
+const newsCacheByCategory = new Map();
 
 // 한국시간(KST) 기준 "오늘의 뉴스" 갱신 주기: 매일 오전 9시.
 // 오전 9시 이전 접속은 전날 9시에 받아온 뉴스를 그대로 재사용하고,
@@ -288,15 +294,8 @@ function currentNewsDayKey(date = new Date()) {
   return getKstParts(yesterday).dateKey;
 }
 
-app.get('/api/news', async (req, res) => {
-  let count = parseInt(req.query.count, 10);
-  if (!Number.isFinite(count)) count = MAX_NEWS_COUNT;
-  count = Math.max(MIN_NEWS_COUNT, Math.min(MAX_NEWS_COUNT, count));
-
-  const todayKey = currentNewsDayKey();
-  if (newsCache.items && newsCache.dayKey === todayKey) {
-    return res.json({ source: newsCache.source, items: newsCache.items.slice(0, count) });
-  }
+// '실시간 주요이슈' 분야: 이슈 피드 -> 분야별 혼합 -> 연합뉴스 전체 -> 구글뉴스 -> 정적 폴백, 기존 다단계 체인 그대로.
+async function fetchIssueChain() {
   const attempts = [
     {
       name: 'issue-feed',
@@ -312,14 +311,44 @@ app.get('/api/news', async (req, res) => {
   for (const attempt of attempts) {
     try {
       const items = await attempt.run();
-      newsCache = { items, source: 'live', dayKey: todayKey, fetchedAt: Date.now() };
-      return res.json({ source: 'live', items: items.slice(0, count) });
+      return { items, source: 'live' };
     } catch (e) {
       console.warn(`news source failed (${attempt.name}):`, e.message);
     }
   }
-  newsCache = { items: FALLBACK_NEWS, source: 'fallback', dayKey: todayKey, fetchedAt: Date.now() };
-  res.json({ source: 'fallback', items: FALLBACK_NEWS.slice(0, count) });
+  return { items: FALLBACK_NEWS, source: 'fallback' };
+}
+
+// 정치/경제/사회/국제/문화/연예/스포츠: 해당 분야 RSS 하나만 사용하고,
+// 실패하면 (분야가 섞인) 정적 폴백으로 대체한다. 실시간 여부는 source 값으로 프런트에 그대로 알려준다.
+async function fetchSingleCategoryChain(categoryKey) {
+  const feed = CATEGORY_LOOKUP[categoryKey];
+  try {
+    const items = (await fetchFeed(feed.url, true, MAX_NEWS_COUNT)).map((it) => ({ ...it, tag: feed.tag }));
+    return { items, source: 'live' };
+  } catch (e) {
+    console.warn(`news source failed (category:${categoryKey}):`, e.message);
+  }
+  return { items: FALLBACK_NEWS, source: 'fallback' };
+}
+
+app.get('/api/news', async (req, res) => {
+  let count = parseInt(req.query.count, 10);
+  if (!Number.isFinite(count)) count = MAX_NEWS_COUNT;
+  count = Math.max(MIN_NEWS_COUNT, Math.min(MAX_NEWS_COUNT, count));
+
+  let category = req.query.category;
+  if (!CATEGORY_KEYS.includes(category)) category = 'issue';
+
+  const todayKey = currentNewsDayKey();
+  const cached = newsCacheByCategory.get(category);
+  if (cached && cached.items && cached.dayKey === todayKey) {
+    return res.json({ source: cached.source, category, items: cached.items.slice(0, count) });
+  }
+
+  const result = category === 'issue' ? await fetchIssueChain() : await fetchSingleCategoryChain(category);
+  newsCacheByCategory.set(category, { items: result.items, source: result.source, dayKey: todayKey, fetchedAt: Date.now() });
+  res.json({ source: result.source, category, items: result.items.slice(0, count) });
 });
 
 app.listen(PORT, () => console.log(`news-typing-game server listening on ${PORT}`));
