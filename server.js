@@ -132,14 +132,14 @@ const HANJA_REGEX = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/;
 // 1순위: JTBC의 "오늘의 주요 이슈" 피드. 이미 중요도순으로 큐레이션된 피드라
 // 분야별로 나눠 인터리빙할 필요 없이 순서 그대로 사용한다.
 const ISSUE_FEED = { key: 'issue', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/issue', useSummary: true, tag: '오늘의 이슈' };
-// 2순위: 이슈 피드가 실패했을 때 쓰는 JTBC 분야별 RSS (정치/경제/사회/국제/문화/연예/스포츠에서 골고루)
+// 2순위: 이슈 피드가 실패했을 때 쓰는 JTBC 분야별 RSS (정치/경제/사회/국제/연예/스포츠에서 골고루)
 // key는 프런트엔드의 뉴스 분야 선택 버튼(data-category)과 그대로 매칭된다.
+// 문화(culture) 피드는 업데이트가 뜸해서 제외했다.
 const CATEGORY_FEEDS = [
   { key: 'politics', tag: '정치', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/politics' },
   { key: 'economy', tag: '경제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/economy' },
   { key: 'society', tag: '사회', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/society' },
   { key: 'international', tag: '국제', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/international' },
-  { key: 'culture', tag: '문화', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/culture' },
   { key: 'entertainment', tag: '연예', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/entertainment' },
   { key: 'sports', tag: '스포츠', url: 'https://news-ex.jtbc.co.kr/v1/get/rss/section/sports' },
 ];
@@ -319,7 +319,7 @@ async function fetchIssueChain() {
   return { items: FALLBACK_NEWS, source: 'fallback' };
 }
 
-// 정치/경제/사회/국제/문화/연예/스포츠: 해당 분야 RSS 하나만 사용하고,
+// 정치/경제/사회/국제/연예/스포츠: 해당 분야 RSS 하나만 사용하고,
 // 실패하면 (분야가 섞인) 정적 폴백으로 대체한다. 실시간 여부는 source 값으로 프런트에 그대로 알려준다.
 async function fetchSingleCategoryChain(categoryKey) {
   const feed = CATEGORY_LOOKUP[categoryKey];
