@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>오늘의 뉴스 타자연습</title>
+<title>타자뉴스 TAJA News</title>
 <style>
   :root{
     --page-bg: #f5f5f7;
@@ -251,7 +251,7 @@
 <body>
 <div class="app">
   <div class="masthead">
-    <h1>오늘의 뉴스<span> 타자연습</span></h1>
+    <h1>타자뉴스<span> TAJA News</span></h1>
     <div class="date" id="today-date">-</div>
   </div>
 
@@ -731,7 +731,7 @@ function copyResult(){
   const acc = document.getElementById('res-acc').textContent;
   const time = document.getElementById('res-time').textContent;
   const title = document.getElementById('res-title').textContent;
-  const text = `📰 오늘의 뉴스 타자연습 (${todayStr})\n참가자: ${playerName}\n등급: ${title}\n타수: ${cpm} 타/분\n정확도: ${acc}\n총 소요시간: ${time}`;
+  const text = `📰 타자뉴스 TAJA News (${todayStr})\n참가자: ${playerName}\n등급: ${title}\n타수: ${cpm} 타/분\n정확도: ${acc}\n총 소요시간: ${time}`;
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('btn-copy');
     const orig = btn.textContent;
