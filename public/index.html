@@ -97,6 +97,22 @@
     color: #fff;
   }
 
+  .category-select{
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin: 0 0 20px;
+  }
+  .category-btn{
+    background: var(--panel-2); border: 1.5px solid var(--border); color: var(--muted);
+    border-radius: 980px; padding: 9px 14px; font-size: 13px; font-weight:600;
+    cursor:pointer; font-family: var(--font); transition: all .12s ease;
+    white-space: nowrap;
+  }
+  .category-btn:hover{ color: var(--text); border-color: #b6b6bb; }
+  .category-btn.active{
+    background: var(--accent); border-color: var(--accent);
+    color: #fff;
+  }
+
   button.primary{
     width:100%;
     background: var(--accent);
@@ -244,6 +260,18 @@
     <p>오늘 실제 보도된 주요 뉴스로 타자 연습을 해봐요. 정치·경제·사회·국제 이슈를 훑으면서 손도 풀어보는 시간!</p>
     <div class="brief" id="brief-note">📰 서버가 매일 최신 뉴스를 자동으로 불러와 갱신합니다.</div>
 
+    <div class="field-label">뉴스 분야</div>
+    <div class="category-select" id="category-select">
+      <button type="button" class="category-btn active" data-category="issue">실시간 주요이슈</button>
+      <button type="button" class="category-btn" data-category="politics">정치</button>
+      <button type="button" class="category-btn" data-category="economy">경제</button>
+      <button type="button" class="category-btn" data-category="society">사회</button>
+      <button type="button" class="category-btn" data-category="international">국제</button>
+      <button type="button" class="category-btn" data-category="culture">문화</button>
+      <button type="button" class="category-btn" data-category="entertainment">연예</button>
+      <button type="button" class="category-btn" data-category="sports">스포츠</button>
+    </div>
+
     <div class="field-label">참가자 이름</div>
     <input id="playerName" type="text" maxlength="12" placeholder="이름을 입력하세요">
     <div class="name-err" id="name-err"></div>
@@ -342,6 +370,7 @@ let FULL_NEWS = [];
 let NEWS = [];
 let playedAtMe = null;
 let selectedCount = 10;
+let selectedCategory = 'issue';
 
 /* ---------------- 뉴스 개수 선택 ---------------- */
 const countButtons = Array.from(document.querySelectorAll('.count-btn'));
@@ -353,13 +382,37 @@ countButtons.forEach(btn => {
   });
 });
 
+/* ---------------- 뉴스 분야 선택 ---------------- */
+const categoryButtons = Array.from(document.querySelectorAll('.category-btn'));
+categoryButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if(btn.classList.contains('active')) return;
+    categoryButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCategory = btn.dataset.category;
+    // 분야를 바꾸면 기사 목록이 열려 있어도 낡은 목록이니 닫아둔다
+    document.getElementById('intro-article-panel').classList.add('hidden');
+    document.getElementById('btn-skip-articles').textContent = '타자연습 패스, 기사 바로 보러가기';
+    initNews(selectedCategory);
+  });
+});
+
 /* ---------------- 뉴스 불러오기 (서버가 대신 RSS를 가져와줌) ---------------- */
-async function initNews(){
+async function initNews(category){
+  const cat = category || selectedCategory;
   const statusEl = document.getElementById('status-line');
   const startBtn = document.getElementById('btn-start');
+  const skipBtn = document.getElementById('btn-skip-articles');
+  startBtn.disabled = true;
+  skipBtn.disabled = true;
+  startBtn.textContent = '뉴스 불러오는 중...';
+  statusEl.textContent = '';
+  statusEl.className = 'status-line';
+  FULL_NEWS = [];
   try{
-    const res = await fetch('/api/news?count=10');
+    const res = await fetch(`/api/news?count=10&category=${encodeURIComponent(cat)}`);
     const data = await res.json();
+    if(cat !== selectedCategory) return; // 그 사이 다른 분야를 눌렀으면 이 응답은 버린다
     FULL_NEWS = data.items || [];
     if(!FULL_NEWS.length) throw new Error('empty');
     if(data.source === 'live'){
@@ -370,14 +423,16 @@ async function initNews(){
       statusEl.className = 'status-line warn';
     }
   } catch(err){
+    if(cat !== selectedCategory) return;
     statusEl.textContent = '뉴스를 불러오지 못했어요. 새로고침 해주세요.';
     statusEl.className = 'status-line warn';
   }
+  if(cat !== selectedCategory) return;
   startBtn.disabled = FULL_NEWS.length === 0;
   startBtn.textContent = FULL_NEWS.length ? '타자 시작하기' : '뉴스를 불러올 수 없음';
-  document.getElementById('btn-skip-articles').disabled = FULL_NEWS.length === 0;
+  skipBtn.disabled = FULL_NEWS.length === 0;
 }
-initNews();
+initNews(selectedCategory);
 loadIntroRanking();
 
 /* ---------------- 화면 요소 ---------------- */
